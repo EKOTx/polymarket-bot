@@ -49,6 +49,7 @@ from scanners.opportunity_detector import analyze_spreads, analyze_tournament_vi
 from strategies.registry import build_registry, run_all_strategies
 from traders.paper_trader import PaperTrader
 from traders.position_manager import mark_to_market, close_resolved, get_performance_stats
+from alerts.notifier import AlertManager
 from utils.logging import setup_logging, get_logger
 import integrations.kalshi as kalshi_client
 import integrations.predictit as predictit_client
@@ -247,6 +248,7 @@ async def run_scan_cycle(
     scan_num: int,
     external_odds: list | None = None,
     strategy_registry: list | None = None,
+    alert_manager: "AlertManager | None" = None,
 ) -> list:
     """
     Execute one full scan cycle.
@@ -290,6 +292,8 @@ async def run_scan_cycle(
                 realized_pnl=round(sum(c["realized_pnl"] for c in closed), 2),
                 resolutions=[c["resolution"] for c in closed],
             )
+            if alert_manager:
+                await alert_manager.alert_closed_trades(closed, client)
 
         # 5. Fetch external odds (throttled — not every scan)
         if ENABLE_EXTERNAL_ODDS and scan_num % EXTERNAL_ODDS_EVERY_N == 1:
@@ -345,6 +349,11 @@ async def run_scan_cycle(
         # 8. Save opportunities
         save_opportunities(opportunities, scan_id)
 
+        # 8a. Alert on high-edge signals
+        if alert_manager:
+            await alert_manager.alert_opportunities(opportunities, client)
+            await alert_manager.alert_daily_digest(paper_trader, client)
+
         # 9. Paper trade actionable signals
         traded = 0
         for opp in opportunities:
@@ -394,6 +403,7 @@ async def main() -> None:
     init_db()
     paper_trader = PaperTrader()
     strategy_registry = build_registry()
+    alert_manager = AlertManager()
     logger.info(
         "strategies_loaded",
         strategies=[s.name for s in strategy_registry],
@@ -409,7 +419,8 @@ async def main() -> None:
         while not _shutdown:
             scan_num += 1
             external_odds = await run_scan_cycle(
-                client, paper_trader, scan_num, external_odds, strategy_registry
+                client, paper_trader, scan_num, external_odds,
+                strategy_registry, alert_manager,
             )
 
             if not _shutdown:
