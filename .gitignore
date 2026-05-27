@@ -1,0 +1,34 @@
+# Secrets - never commit these
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Logs
+*.log
+logs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Data
+data/
+*.csv
+*.json.bak
+
+# Coverage
+.coverage
+htmlcov/
