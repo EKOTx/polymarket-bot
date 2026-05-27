@@ -1,154 +1,232 @@
-"""Paper Trades — simulated trade tracking and PnL."""
-from __future__ import annotations
+"""
+Paper Trades — positions, PnL, and strategy performance.
+"""
+
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-import json
 import pandas as pd
+import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-from dotenv import load_dotenv
-load_dotenv()
 
-from database.db import init_db, get_session
-from database.models import PaperTrade as DBTrade, Portfolio as DBPortfolio
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-st.set_page_config(page_title="Paper Trades | Polymarket Quant", layout="wide", page_icon="🧾")
-init_db()
+from database.db import get_session
+from traders.position_manager import get_performance_stats
+from sqlalchemy import text
+
+st.set_page_config(
+    page_title="Paper Trades | Polymarket Bot",
+    page_icon="📊",
+    layout="wide",
+)
+
+st.title("📊 Paper Trades")
+
+
+# ── Data loading ──────────────────────────────────────────────────────────────
+
+@st.cache_data(ttl=10)
+def load_trades():
+    with get_session() as s:
+        rows = s.execute(text("""
+            SELECT id, market_id, question, outcome, strategy,
+                   entry_price, exit_price, size_shares, cost_usd,
+                   realized_pnl, unrealized_pnl, status, resolution,
+                   opened_at, closed_at
+            FROM paper_trades
+            ORDER BY opened_at DESC
+        """)).fetchall()
+    cols = ["id","market_id","question","outcome","strategy",
+            "entry_price","exit_price","size_shares","cost_usd",
+            "realized_pnl","unrealized_pnl","status","resolution",
+            "opened_at","closed_at"]
+    return pd.DataFrame(rows, columns=cols) if rows else pd.DataFrame(columns=cols)
 
 
 @st.cache_data(ttl=10)
-def load_trades() -> pd.DataFrame:
+def load_portfolio_history():
     with get_session() as s:
-        rows = s.query(DBTrade).order_by(DBTrade.opened_at.desc()).limit(500).all()
-        if not rows:
-            return pd.DataFrame()
-        records = []
-        for r in rows:
-            notes = json.loads(r.notes or "{}")
-            records.append({
-                "ID": r.id,
-                "Status": r.status,
-                "Strategy": r.strategy,
-                "Question": r.question[:60],
-                "Outcome": r.outcome,
-                "Side": r.side,
-                "Entry Price": r.entry_price,
-                "Shares": r.size_shares,
-                "Cost $": r.cost_usd,
-                "Exit Price": r.exit_price,
-                "Realized PnL": r.realized_pnl,
-                "Unreal PnL": r.unrealized_pnl,
-                "Edge % (at entry)": notes.get("edge_pct"),
-                "Confidence": notes.get("confidence"),
-                "Opened": r.opened_at,
-                "Closed": r.closed_at,
-            })
-        return pd.DataFrame(records)
+        rows = s.execute(text("""
+            SELECT timestamp, balance, realized_pnl, unrealized_pnl,
+                   total_invested, open_positions
+            FROM portfolio
+            ORDER BY timestamp ASC
+        """)).fetchall()
+    cols = ["timestamp","balance","realized_pnl","unrealized_pnl",
+            "total_invested","open_positions"]
+    return pd.DataFrame(rows, columns=cols) if rows else pd.DataFrame(columns=cols)
 
 
 @st.cache_data(ttl=10)
-def load_portfolio_history() -> pd.DataFrame:
-    with get_session() as s:
-        rows = s.query(DBPortfolio).order_by(DBPortfolio.timestamp).all()
-        if not rows:
-            return pd.DataFrame()
-        return pd.DataFrame([{
-            "time": r.timestamp,
-            "balance": r.balance,
-            "realized_pnl": r.realized_pnl,
-            "unrealized_pnl": r.unrealized_pnl,
-            "total_trades": r.total_trades,
-            "open_positions": r.open_positions,
-        } for r in rows])
+def load_stats():
+    return get_performance_stats()
 
-
-# ── Main ─────────────────────────────────────────────────────────────────────
-
-st.markdown("# 🧾 Paper Trades")
-st.caption("All simulated trades. No real money involved.")
 
 df = load_trades()
-port_hist = load_portfolio_history()
+port = load_portfolio_history()
+stats = load_stats()
 
-# ── KPIs ─────────────────────────────────────────────────────────────────────
+# ── KPI row ───────────────────────────────────────────────────────────────────
 
-if not df.empty:
-    open_trades = df[df["Status"] == "OPEN"]
-    closed_trades = df[df["Status"] == "CLOSED"]
-    wins = closed_trades[closed_trades["Realized PnL"] > 0] if not closed_trades.empty else pd.DataFrame()
-    total_pnl = closed_trades["Realized PnL"].sum() if not closed_trades.empty else 0
+open_df   = df[df["status"] == "OPEN"]  if not df.empty else pd.DataFrame()
+closed_df = df[df["status"] == "CLOSED"] if not df.empty else pd.DataFrame()
 
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Total Trades", len(df))
-    c2.metric("Open", len(open_trades))
-    c3.metric("Closed", len(closed_trades))
-    c4.metric("Win Rate", f"{len(wins)/max(len(closed_trades),1):.0%}")
-    c5.metric("Realized PnL", f"${total_pnl:+,.2f}")
-else:
-    st.info("No paper trades yet. Scanner will execute trades when actionable opportunities are found.")
-    st.stop()
+total_unrealized = open_df["unrealized_pnl"].sum() if not open_df.empty else 0.0
+total_realized   = closed_df["realized_pnl"].sum() if not closed_df.empty else 0.0
+total_pnl        = total_realized + total_unrealized
 
-st.markdown("---")
+current_balance = port["balance"].iloc[-1] if not port.empty else 10000.0
+win_rate = stats.get("win_rate", 0) if isinstance(stats, dict) and "win_rate" in stats else 0
 
-# ── PnL chart ─────────────────────────────────────────────────────────────────
+col1, col2, col3, col4, col5, col6 = st.columns(6)
+col1.metric("Balance",        f"${current_balance:,.2f}",
+            delta=f"{current_balance - 10000:+,.2f}")
+col2.metric("Total PnL",      f"${total_pnl:+,.2f}")
+col3.metric("Realized",       f"${total_realized:+,.2f}")
+col4.metric("Unrealized",     f"${total_unrealized:+,.2f}")
+col5.metric("Open Positions", len(open_df))
+col6.metric("Win Rate",       f"{win_rate:.0%}",
+            delta=f"{stats.get('total_closed', 0)} closed" if isinstance(stats, dict) else "")
 
-if not port_hist.empty:
-    st.markdown("### 📈 Portfolio Value Over Time")
+st.divider()
+
+# ── Portfolio balance chart ───────────────────────────────────────────────────
+
+if not port.empty:
+    st.subheader("💰 Portfolio Balance Over Time")
+    port["timestamp"] = pd.to_datetime(port["timestamp"])
+    port["total_pnl"] = port["realized_pnl"] + port["unrealized_pnl"]
+
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=port_hist["time"],
-        y=port_hist["balance"],
-        mode="lines",
-        name="Balance",
-        line=dict(color="#00ff88", width=2),
+        x=port["timestamp"], y=port["balance"],
+        name="Balance", line=dict(color="#00ff88", width=2),
+        fill="tozeroy", fillcolor="rgba(0,255,136,0.05)",
     ))
     fig.add_trace(go.Scatter(
-        x=port_hist["time"],
-        y=port_hist["realized_pnl"],
-        mode="lines",
-        name="Realized PnL",
-        line=dict(color="#388bfd", width=1, dash="dash"),
+        x=port["timestamp"], y=port["total_pnl"],
+        name="Total PnL", line=dict(color="#f77f00", width=1.5, dash="dot"),
     ))
+    fig.add_hline(y=10000, line_dash="dash", line_color="#555",
+                  annotation_text="Starting $10,000")
     fig.update_layout(
-        template="plotly_dark",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        height=250,
+        paper_bgcolor="#0e1117", plot_bgcolor="#161b22",
+        font_color="#e6edf3", height=280,
+        legend=dict(orientation="h", y=1.1),
         margin=dict(l=0, r=0, t=10, b=0),
-        legend=dict(orientation="h"),
-        yaxis_title="USD",
     )
     st.plotly_chart(fig, use_container_width=True)
 
+st.divider()
+
+# ── Performance stats ─────────────────────────────────────────────────────────
+
+if isinstance(stats, dict) and "total_closed" in stats:
+    st.subheader("📈 Strategy Performance")
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Profit Factor", f"{stats.get('profit_factor', 0):.2f}")
+    c2.metric("Avg Win",       f"${stats.get('avg_win', 0):.2f}")
+    c3.metric("Avg Loss",      f"${stats.get('avg_loss', 0):.2f}")
+    c4.metric("Sharpe (ann.)", f"{stats.get('sharpe') or '—'}")
+
+    by_strat = stats.get("by_strategy", {})
+    if by_strat:
+        strat_rows = []
+        for name, d in by_strat.items():
+            short = name.split(".")[-1]
+            strat_rows.append({
+                "Strategy":  short,
+                "Trades":    d["trades"],
+                "Wins":      d["wins"],
+                "Win Rate":  f"{d['win_rate']:.0%}",
+                "Total PnL": f"${d['pnl']:+.2f}",
+                "ROI":       f"{d['roi_pct']:+.1f}%",
+            })
+        st.dataframe(
+            pd.DataFrame(strat_rows),
+            use_container_width=True, hide_index=True,
+        )
+
+    if not closed_df.empty:
+        fig2 = px.histogram(
+            closed_df, x="realized_pnl", nbins=20,
+            color_discrete_sequence=["#00b4d8"],
+            title="Realized PnL Distribution",
+            labels={"realized_pnl": "Realized PnL ($)"},
+        )
+        fig2.add_vline(x=0, line_color="#ff4444", line_dash="dash")
+        fig2.update_layout(
+            paper_bgcolor="#0e1117", plot_bgcolor="#161b22",
+            font_color="#e6edf3", height=220,
+            margin=dict(l=0, r=0, t=30, b=0),
+        )
+        st.plotly_chart(fig2, use_container_width=True)
+else:
+    st.info("No closed trades yet — stats appear once markets resolve.")
+
+st.divider()
+
 # ── Open positions ────────────────────────────────────────────────────────────
 
-st.markdown("### 📂 Open Positions")
-if open_trades.empty:
+st.subheader(f"🟢 Open Positions ({len(open_df)})")
+
+if open_df.empty:
     st.info("No open positions.")
 else:
-    cols = ["ID", "Strategy", "Question", "Outcome", "Entry Price", "Shares", "Cost $", "Opened"]
-    st.dataframe(open_trades[cols], use_container_width=True, hide_index=True, height=250)
+    disp = open_df.copy()
+    disp["strategy"] = disp["strategy"].str.split(".").str[-1]
+    disp["Unrealized PnL"] = disp["unrealized_pnl"].apply(
+        lambda x: f"{'🟢' if (x or 0) >= 0 else '🔴'} ${(x or 0):+.2f}"
+    )
+    disp["Entry"] = disp["entry_price"].map(lambda x: f"{x:.3f}")
+    disp["Size"]  = disp["cost_usd"].map(lambda x: f"${x:.0f}")
+    disp["Age"]   = pd.to_datetime(disp["opened_at"]).apply(
+        lambda t: f"{int((pd.Timestamp.utcnow() - t.tz_localize(None)).total_seconds() // 60)}m"
+        if pd.notna(t) else "—"
+    )
+    st.dataframe(
+        disp[["question","strategy","Entry","Size","Unrealized PnL","Age"]].rename(
+            columns={"question": "Market", "strategy": "Strategy"}
+        ),
+        use_container_width=True, hide_index=True,
+    )
+
+st.divider()
 
 # ── Closed trades ─────────────────────────────────────────────────────────────
 
-st.markdown("### ✅ Closed Trades")
-if closed_trades.empty:
+st.subheader(f"⚫ Closed Trades ({len(closed_df)})")
+
+if closed_df.empty:
     st.info("No closed trades yet.")
 else:
-    display = closed_trades.copy()
-    display["PnL Color"] = display["Realized PnL"].apply(lambda x: "🟢" if (x or 0) > 0 else "🔴")
-    cols = ["ID", "PnL Color", "Strategy", "Question", "Entry Price", "Exit Price", "Realized PnL", "Opened", "Closed"]
-    st.dataframe(display[cols], use_container_width=True, hide_index=True, height=300)
+    disp2 = closed_df.copy()
+    disp2["strategy"] = disp2["strategy"].str.split(".").str[-1]
+    disp2["Result"] = disp2.apply(
+        lambda r: (
+            f"{'✅' if (r['realized_pnl'] or 0) > 0 else '❌'} "
+            f"${(r['realized_pnl'] or 0):+.2f} ({r['resolution'] or '?'})"
+        ), axis=1
+    )
+    disp2["Entry"] = disp2["entry_price"].map(lambda x: f"{x:.3f}")
+    disp2["Exit"]  = disp2["exit_price"].map(
+        lambda x: f"{x:.3f}" if pd.notna(x) else "—"
+    )
+    disp2["Cost"]  = disp2["cost_usd"].map(lambda x: f"${x:.0f}")
+    st.dataframe(
+        disp2[["question","strategy","Entry","Exit","Cost","Result","closed_at"]].rename(
+            columns={"question": "Market", "strategy": "Strategy", "closed_at": "Closed"}
+        ),
+        use_container_width=True, hide_index=True,
+    )
 
-# ── Strategy breakdown ────────────────────────────────────────────────────────
+# ── Auto-refresh ──────────────────────────────────────────────────────────────
 
-if not df.empty:
-    st.markdown("### 📊 PnL by Strategy")
-    strat_df = df.groupby("Strategy").agg(
-        trades=("ID", "count"),
-        total_cost=("Cost $", "sum"),
-        realized=("Realized PnL", "sum"),
-    ).reset_index()
-    st.dataframe(strat_df, use_container_width=True, hide_index=True)
+import time
+if st.sidebar.checkbox("Auto-refresh (10s)", value=True):
+    time.sleep(10)
+    st.cache_data.clear()
+    st.rerun()

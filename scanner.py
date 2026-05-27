@@ -48,6 +48,7 @@ from scanners.event_grouper import scan_all_groups
 from scanners.opportunity_detector import analyze_spreads, analyze_tournament_vig
 from strategies.registry import build_registry, run_all_strategies
 from traders.paper_trader import PaperTrader
+from traders.position_manager import mark_to_market, close_resolved, get_performance_stats
 from utils.logging import setup_logging, get_logger
 import integrations.kalshi as kalshi_client
 import integrations.predictit as predictit_client
@@ -275,6 +276,21 @@ async def run_scan_cycle(
         # 4. Save market data (enriched subset)
         save_markets(enriched, scan_id)
 
+        # 4a. Mark open positions to current prices
+        total_unrealized, mtm_count = mark_to_market(enriched, paper_trader.balance)
+        if mtm_count:
+            logger.debug("mark_to_market", positions=mtm_count, unrealized_pnl=total_unrealized)
+
+        # 4b. Close resolved positions, return proceeds to balance
+        closed = close_resolved(enriched, paper_trader)
+        if closed:
+            logger.info(
+                "positions_closed",
+                count=len(closed),
+                realized_pnl=round(sum(c["realized_pnl"] for c in closed), 2),
+                resolutions=[c["resolution"] for c in closed],
+            )
+
         # 5. Fetch external odds (throttled — not every scan)
         if ENABLE_EXTERNAL_ODDS and scan_num % EXTERNAL_ODDS_EVERY_N == 1:
             external_odds = await fetch_external_odds(client)
@@ -348,7 +364,15 @@ async def run_scan_cycle(
             markets=len(enriched),
             opportunities=len(opportunities),
             paper_trades=traded,
+            balance=round(paper_trader.balance, 2),
+            unrealized_pnl=total_unrealized,
         )
+
+        # Log strategy performance every 10 scans (or when trades close)
+        if scan_num % 10 == 0 or closed:
+            stats = get_performance_stats()
+            if "total_closed" in stats:
+                logger.info("performance_stats", **{k: v for k, v in stats.items() if k != "by_strategy"})
 
         finish_scan_run(scan_id, len(all_markets), len(enriched), len(opportunities), duration)
 

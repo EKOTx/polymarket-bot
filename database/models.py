@@ -124,6 +124,7 @@ class PaperTrade(Base):
     realized_pnl: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     unrealized_pnl: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     status: Mapped[str] = mapped_column(String, default="OPEN")  # OPEN|CLOSED|CANCELLED
+    resolution: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # YES|NO|CANCELLED
     notes: Mapped[str] = mapped_column(Text, default="")
     opened_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
