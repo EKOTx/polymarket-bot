@@ -221,6 +221,31 @@ export const alertsApi = {
   test: () => api.post<AlertTestResult>("/alerts/test").then((r) => r.data),
 };
 
+// ── Billing ───────────────────────────────────────────────────────────────────
+
+export interface SubscriptionStatus {
+  id: number;
+  stripe_subscription_id: string | null;
+  status: string;
+  current_period_end: string | null;
+}
+
+export interface BillingStatus {
+  plan: string;
+  stripe_customer_id: string | null;
+  subscription: SubscriptionStatus | null;
+}
+
+export const billingApi = {
+  status: () => api.get<BillingStatus>("/billing/status").then((r) => r.data),
+
+  createCheckout: (plan: "pro" | "premium") =>
+    api.post<{ url: string }>("/billing/checkout", { plan }).then((r) => r.data),
+
+  createPortal: () =>
+    api.post<{ url: string }>("/billing/portal").then((r) => r.data),
+};
+
 // ── Markets ───────────────────────────────────────────────────────────────────
 
 export interface PricePoint {

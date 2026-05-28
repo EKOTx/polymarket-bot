@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 import { TopBar } from "@/components/layout/TopBar";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { useAuth } from "@/lib/auth";
-import { authApi } from "@/lib/api";
+import { authApi, billingApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const PLAN_LABELS: Record<string, { label: string; color: string; desc: string }> = {
@@ -14,9 +15,10 @@ const PLAN_LABELS: Record<string, { label: string; color: string; desc: string }
   premium: { label: "Premium", color: "text-amber-400", desc: "Live data · unlimited · 20 positions · API access" },
 };
 
-export default function SettingsPage() {
+function SettingsContent() {
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const searchParams = useSearchParams();
+  const { user, logout, loadUser } = useAuth();
 
   // Profile
   const [fullName, setFullName] = useState(user?.full_name ?? "");
@@ -31,6 +33,11 @@ export default function SettingsPage() {
   const [pwError, setPwError] = useState("");
   const [pwSuccess, setPwSuccess] = useState(false);
 
+  // Billing
+  const [billingLoading, setBillingLoading] = useState(false);
+  const [billingError, setBillingError] = useState("");
+  const [checkoutSuccess, setCheckoutSuccess] = useState(false);
+
   // Delete account
   const [deleteEmail, setDeleteEmail] = useState("");
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -39,6 +46,13 @@ export default function SettingsPage() {
 
   const plan = user?.plan ?? "free";
   const planInfo = PLAN_LABELS[plan] ?? PLAN_LABELS.free;
+
+  // Refresh user after successful Stripe checkout
+  useEffect(() => {
+    if (searchParams.get("checkout") === "success") {
+      loadUser().then(() => setCheckoutSuccess(true));
+    }
+  }, [searchParams, loadUser]);
 
   const saveProfile = async () => {
     setProfileSaving(true);
@@ -67,6 +81,32 @@ export default function SettingsPage() {
     }
   };
 
+  const startCheckout = async (targetPlan: "pro" | "premium") => {
+    setBillingError("");
+    setBillingLoading(true);
+    try {
+      const { url } = await billingApi.createCheckout(targetPlan);
+      window.location.href = url;
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setBillingError(msg ?? "Failed to start checkout. Is Stripe configured?");
+      setBillingLoading(false);
+    }
+  };
+
+  const openPortal = async () => {
+    setBillingError("");
+    setBillingLoading(true);
+    try {
+      const { url } = await billingApi.createPortal();
+      window.location.href = url;
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setBillingError(msg ?? "Failed to open billing portal.");
+      setBillingLoading(false);
+    }
+  };
+
   const deleteAccount = async () => {
     if (deleteEmail.toLowerCase() !== user?.email?.toLowerCase()) {
       setDeleteError("Email does not match your account email");
@@ -88,6 +128,7 @@ export default function SettingsPage() {
   return (
     <div>
       <TopBar title="Settings" />
+
       <div className="p-6 space-y-6 max-w-xl">
 
         {/* Profile */}
@@ -187,22 +228,60 @@ export default function SettingsPage() {
         {/* Subscription */}
         <Card>
           <CardHeader title="Subscription" />
+          {checkoutSuccess && (
+            <p className="mb-4 text-sm text-emerald-400 bg-emerald-900/20 border border-emerald-800/30 rounded px-3 py-2">
+              ✓ Subscription updated successfully.
+            </p>
+          )}
           <div className="flex items-start justify-between mb-4">
             <div>
               <p className={cn("text-lg font-semibold font-mono", planInfo.color)}>{planInfo.label}</p>
               <p className="text-sm text-[#6e7681] mt-0.5">{planInfo.desc}</p>
             </div>
-            {plan === "free" && (
-              <button className="px-4 py-2 text-sm rounded bg-blue-700 hover:bg-blue-600 text-white transition-colors">
-                Upgrade → Pro
-              </button>
-            )}
-            {plan === "pro" && (
-              <button className="px-4 py-2 text-sm rounded bg-amber-700 hover:bg-amber-600 text-white transition-colors">
-                Upgrade → Premium
-              </button>
-            )}
+            <div className="flex flex-col gap-2 items-end">
+              {plan === "free" && (
+                <button
+                  onClick={() => startCheckout("pro")}
+                  disabled={billingLoading}
+                  className="px-4 py-2 text-sm rounded bg-blue-700 hover:bg-blue-600 disabled:opacity-50 text-white transition-colors"
+                >
+                  {billingLoading ? "Loading…" : "Upgrade → Pro"}
+                </button>
+              )}
+              {plan === "pro" && (
+                <>
+                  <button
+                    onClick={() => startCheckout("premium")}
+                    disabled={billingLoading}
+                    className="px-4 py-2 text-sm rounded bg-amber-700 hover:bg-amber-600 disabled:opacity-50 text-white transition-colors"
+                  >
+                    {billingLoading ? "Loading…" : "Upgrade → Premium"}
+                  </button>
+                  <button
+                    onClick={openPortal}
+                    disabled={billingLoading}
+                    className="px-3 py-1.5 text-xs rounded border border-[#30363d] text-[#6e7681] hover:text-[#e6edf3] transition-colors"
+                  >
+                    Manage subscription
+                  </button>
+                </>
+              )}
+              {plan === "premium" && (
+                <button
+                  onClick={openPortal}
+                  disabled={billingLoading}
+                  className="px-3 py-1.5 text-xs rounded border border-[#30363d] text-[#6e7681] hover:text-[#e6edf3] transition-colors"
+                >
+                  Manage subscription
+                </button>
+              )}
+            </div>
           </div>
+          {billingError && (
+            <p className="mb-4 text-xs text-red-400 bg-red-900/20 border border-red-800/30 rounded px-3 py-2">
+              {billingError}
+            </p>
+          )}
           <div className="space-y-2 border-t border-[#30363d] pt-4">
             {Object.entries(PLAN_LABELS).map(([key, info]) => (
               <div key={key} className="flex items-center gap-3">
@@ -268,5 +347,13 @@ export default function SettingsPage() {
 
       </div>
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-[#6e7681] text-sm">Loading…</div>}>
+      <SettingsContent />
+    </Suspense>
   );
 }
