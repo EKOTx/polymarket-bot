@@ -14,11 +14,14 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 
 from backend.app.api.v1.router import api_router
 from backend.app.core.config import settings
 from backend.app.core.database import Base, engine
+from backend.app.core.limiter import limiter
 from backend.app.models import user as _user_models  # noqa: F401
 from backend.app.models import public as _public_models  # noqa: F401
 
@@ -49,7 +52,6 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     _migrate_sqlite()
     yield
-    # Cleanup (nothing needed yet)
 
 
 # ---------------------------------------------------------------------------
@@ -65,6 +67,9 @@ app = FastAPI(
     redoc_url="/redoc",
     openapi_url="/openapi.json",
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # ---------------------------------------------------------------------------
 # CORS

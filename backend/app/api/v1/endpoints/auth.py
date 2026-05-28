@@ -1,5 +1,5 @@
 """
-Auth endpoints: register, login, /me, refresh, forgot/reset password.
+Auth endpoints: register, login, /me, forgot/reset password, change password, delete account.
 """
 
 from __future__ import annotations
@@ -8,13 +8,15 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 
 from backend.app.api.deps import CurrentUser, DbSession
 from backend.app.core.email import send_password_reset
+from backend.app.core.limiter import limiter
 from backend.app.core.security import create_access_token, hash_password, verify_password
 from backend.app.models.user import User
 from backend.app.schemas.auth import (
+    ChangePasswordRequest,
     ForgotPasswordRequest,
     ForgotPasswordResponse,
     LoginRequest,
@@ -28,8 +30,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-def register(body: RegisterRequest, db: DbSession):
-    """Create new account. Returns JWT immediately."""
+@limiter.limit("10/hour")
+def register(request: Request, body: RegisterRequest, db: DbSession):
     existing = db.query(User).filter(User.email == body.email).first()
     if existing:
         raise HTTPException(status.HTTP_409_CONFLICT, "Email already registered")
@@ -49,8 +51,8 @@ def register(body: RegisterRequest, db: DbSession):
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(body: LoginRequest, db: DbSession):
-    """Email/password login. Returns JWT."""
+@limiter.limit("20/hour")
+def login(request: Request, body: LoginRequest, db: DbSession):
     user = db.query(User).filter(User.email == body.email).first()
     if not user or not verify_password(body.password, user.hashed_password):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid email or password")
@@ -67,13 +69,11 @@ def login(body: LoginRequest, db: DbSession):
 
 @router.get("/me", response_model=UserResponse)
 def get_me(user: CurrentUser):
-    """Return current authenticated user."""
     return user
 
 
 @router.patch("/me", response_model=UserResponse)
 def update_me(body: dict, user: CurrentUser, db: DbSession):
-    """Update full_name."""
     if "full_name" in body:
         user.full_name = body["full_name"]
         db.commit()
@@ -81,9 +81,41 @@ def update_me(body: dict, user: CurrentUser, db: DbSession):
     return user
 
 
+@router.post("/me/change-password")
+def change_password(body: ChangePasswordRequest, user: CurrentUser, db: DbSession):
+    if not verify_password(body.current_password, user.hashed_password):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Current password is incorrect")
+    user.hashed_password = hash_password(body.new_password)
+    user.reset_token_hash = None
+    user.reset_token_expires = None
+    db.commit()
+    return {"message": "Password changed successfully"}
+
+
+@router.delete("/me")
+def delete_account(body: dict, user: CurrentUser, db: DbSession):
+    """
+    Permanently delete account and all associated data.
+    Requires email confirmation in body: {"confirm_email": "user@example.com"}
+    """
+    confirm = body.get("confirm_email", "")
+    if confirm.lower() != user.email.lower():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Email confirmation does not match")
+
+    from backend.app.models.market import PaperTrade, Portfolio
+
+    db.query(PaperTrade).filter(PaperTrade.user_id == user.id).delete()
+    db.query(Portfolio).filter(Portfolio.user_id == user.id).delete()
+    db.delete(user)
+    db.commit()
+
+    return {"message": "Account deleted"}
+
+
 @router.post("/forgot-password", response_model=ForgotPasswordResponse)
-def forgot_password(body: ForgotPasswordRequest, db: DbSession):
-    """Request a password reset link. Always returns 200 to prevent email enumeration."""
+@limiter.limit("5/hour")
+def forgot_password(request: Request, body: ForgotPasswordRequest, db: DbSession):
+    """Always returns 200 to prevent email enumeration."""
     user = db.query(User).filter(User.email == body.email).first()
     if not user or not user.is_active:
         return ForgotPasswordResponse(message="If that email is registered, a reset link has been sent.")
@@ -107,7 +139,6 @@ def forgot_password(body: ForgotPasswordRequest, db: DbSession):
 
 @router.post("/reset-password")
 def reset_password(body: ResetPasswordRequest, db: DbSession):
-    """Validate reset token and set new password."""
     token_hash = hashlib.sha256(body.token.encode()).hexdigest()
     user = db.query(User).filter(User.reset_token_hash == token_hash).first()
 

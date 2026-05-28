@@ -20,6 +20,12 @@ router = APIRouter(prefix="/trades", tags=["trades"])
 SLIPPAGE = 0.002
 FEE_PCT  = 0.01
 
+PLAN_LIMITS = {
+    "free":    {"max_positions": 3,  "max_position_usd": 100.0},
+    "pro":     {"max_positions": 10, "max_position_usd": 500.0},
+    "premium": {"max_positions": 20, "max_position_usd": 1000.0},
+}
+
 
 class PlaceTradeIn(BaseModel):
     opportunity_id: int
@@ -85,8 +91,9 @@ def place_trade(body: PlaceTradeIn, user: CurrentUser, db: DbSession):
     if not opp:
         raise HTTPException(status_code=404, detail="Opportunity not found")
 
+    plan_limits = PLAN_LIMITS.get(user.plan, PLAN_LIMITS["free"])
     balance, starting = _portfolio_snap(db, user.id)
-    cost = min(body.size_usd, settings.PAPER_MAX_POSITION_SIZE)
+    cost = min(body.size_usd, plan_limits["max_position_usd"])
 
     # Risk checks
     if cost > balance:
@@ -97,8 +104,9 @@ def place_trade(body: PlaceTradeIn, user: CurrentUser, db: DbSession):
         .filter(PaperTrade.user_id == user.id, PaperTrade.status == "OPEN")
         .all()
     )
-    if len(open_trades) >= settings.PAPER_MAX_OPEN_POSITIONS:
-        raise HTTPException(400, f"Max open positions reached ({settings.PAPER_MAX_OPEN_POSITIONS})")
+    max_pos = plan_limits["max_positions"]
+    if len(open_trades) >= max_pos:
+        raise HTTPException(400, f"Max open positions for {user.plan} plan: {max_pos}")
 
     total_invested = sum(t.cost_usd for t in open_trades)
     max_exposure = starting * settings.PAPER_MAX_EXPOSURE_PCT

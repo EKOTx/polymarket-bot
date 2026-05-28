@@ -6,11 +6,12 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 
 from backend.app.api.deps import DbSession
 from backend.app.core.email import send_email, send_waitlist_confirmation
 from backend.app.core.config import settings
+from backend.app.core.limiter import limiter
 from backend.app.models.public import ContactMessage, WaitlistEntry
 from backend.app.schemas.public import (
     ContactRequest,
@@ -24,7 +25,8 @@ logger = logging.getLogger(__name__)
 
 
 @router.post("/waitlist", response_model=WaitlistResponse, status_code=status.HTTP_200_OK)
-def join_waitlist(body: WaitlistRequest, db: DbSession):
+@limiter.limit("3/hour")
+def join_waitlist(request: Request, body: WaitlistRequest, db: DbSession):
     existing = db.query(WaitlistEntry).filter(WaitlistEntry.email == body.email).first()
     if existing:
         return WaitlistResponse(
@@ -49,7 +51,8 @@ def join_waitlist(body: WaitlistRequest, db: DbSession):
 
 
 @router.post("/contact", response_model=ContactResponse, status_code=status.HTTP_200_OK)
-def submit_contact(body: ContactRequest, db: DbSession):
+@limiter.limit("5/hour")
+def submit_contact(request: Request, body: ContactRequest, db: DbSession):
     if len(body.message) < 10:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Message too short")
 
