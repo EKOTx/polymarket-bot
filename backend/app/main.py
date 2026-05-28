@@ -49,8 +49,24 @@ def _migrate_sqlite() -> None:
 # Startup / shutdown
 # ---------------------------------------------------------------------------
 
+def _init_sentry() -> None:
+    if not settings.SENTRY_DSN:
+        return
+    import sentry_sdk
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
+    from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        environment=settings.ENV,
+        integrations=[FastApiIntegration(), SqlalchemyIntegration()],
+        traces_sample_rate=0.1,
+        send_default_pii=False,
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _init_sentry()
     Base.metadata.create_all(bind=engine)
     _migrate_sqlite()
     yield

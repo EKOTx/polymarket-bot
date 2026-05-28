@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import * as Sentry from "@sentry/nextjs";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 
 export default function DashboardError({
@@ -11,7 +12,7 @@ export default function DashboardError({
   reset: () => void;
 }) {
   useEffect(() => {
-    // TODO: Send error to Sentry when configured
+    Sentry.captureException(error);
     console.error("[DashboardError]", error);
   }, [error]);
 

@@ -49,6 +49,7 @@ export interface UserResponse {
   plan: string;
   is_verified: boolean;
   is_active: boolean;
+  is_superuser: boolean;
 }
 
 export const authApi = {

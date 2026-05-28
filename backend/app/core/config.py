@@ -89,6 +89,9 @@ class Settings(BaseSettings):
     EMAIL_FROM: str = "noreply@polymarket-intel.com"
     FRONTEND_URL: str = "http://localhost:3000"
 
+    # ── Sentry ────────────────────────────────────────────────────────────────
+    SENTRY_DSN: str = ""  # leave blank to disable
+
     # ── Waitlist ──────────────────────────────────────────────────────────────
     WAITLIST_NOTIFY_EMAIL: str = ""  # email to notify on new waitlist signup
 

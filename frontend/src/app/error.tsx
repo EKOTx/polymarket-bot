@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import * as Sentry from "@sentry/nextjs";
 import { AlertTriangle } from "lucide-react";
 
 export default function GlobalError({
@@ -11,10 +12,7 @@ export default function GlobalError({
   reset: () => void;
 }) {
   useEffect(() => {
-    // TODO: Send error to Sentry when configured
-    // if (typeof window !== "undefined" && window.Sentry) {
-    //   window.Sentry.captureException(error);
-    // }
+    Sentry.captureException(error);
     console.error("[GlobalError]", error);
   }, [error]);
 

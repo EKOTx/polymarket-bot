@@ -15,6 +15,7 @@ from fastapi import APIRouter, Query
 from sqlalchemy import desc
 
 from backend.app.api.deps import CurrentUser, DbSession, OptionalUser
+from backend.app.core.cache import _cache
 from backend.app.models.market import Opportunity, ScanRun
 from backend.app.schemas.opportunity import (
     OpportunityListResponse,
@@ -88,6 +89,10 @@ def latest_opportunities(
 ):
     """Top opportunities from the most recent scan."""
     plan = user.plan if user else "free"
+    cache_key = f"latest:{plan}:{limit}"
+    cached = _cache.get(cache_key)
+    if cached is not None:
+        return cached
 
     # Get latest scan_id
     latest_scan = db.query(ScanRun).order_by(desc(ScanRun.id)).first()
@@ -121,28 +126,34 @@ def latest_opportunities(
         .limit(limit)
         .all()
     )
-    return [OpportunityOut.model_validate(o) for o in items]
+    result = [OpportunityOut.model_validate(o) for o in items]
+    _cache.set(cache_key, result, ttl=15.0)
+    return result
 
 
 @router.get("/scanner/status", response_model=ScannerStatusResponse)
 def scanner_status(db: DbSession):
     """Scanner health — public endpoint."""
+    cached = _cache.get("scanner:status")
+    if cached is not None:
+        return cached
+
     latest = db.query(ScanRun).order_by(desc(ScanRun.id)).first()
     if not latest:
-        return ScannerStatusResponse(
+        result = ScannerStatusResponse(
             last_scan_id=None, last_scan_at=None, duration_seconds=None,
             markets_fetched=0, markets_priced=0, opportunities_found=0,
             is_running=False, error=None,
         )
+        _cache.set("scanner:status", result, ttl=15.0)
+        return result
 
-    # Consider scanner "running" if last scan finished < 2× interval ago
+    # Consider scanner "running" if last scan finished < SCAN_INTERVAL * 3 ago
     from backend.app.core.config import settings
-    is_running = (
-        latest.finished_at is not None and
-        (datetime.utcnow() - latest.finished_at).seconds < settings.SCAN_INTERVAL_SECONDS * 3
-    )
+    elapsed = (datetime.utcnow() - latest.finished_at).total_seconds() if latest.finished_at else None
+    is_running = elapsed is not None and elapsed < settings.SCAN_INTERVAL_SECONDS * 3
 
-    return ScannerStatusResponse(
+    result = ScannerStatusResponse(
         last_scan_id=latest.id,
         last_scan_at=latest.started_at,
         duration_seconds=latest.duration_seconds,
@@ -152,3 +163,5 @@ def scanner_status(db: DbSession):
         is_running=is_running,
         error=latest.error,
     )
+    _cache.set("scanner:status", result, ttl=15.0)
+    return result

@@ -27,5 +27,15 @@ stripe>=9.0.0
 numpy>=1.26.0
 scipy>=1.13.0
 
+# Rate limiting
+slowapi>=0.1.9
+
+# Error tracking
+sentry-sdk[fastapi]>=2.0.0
+
 # Utilities
 python-dotenv>=1.0.0
+
+# Testing
+pytest>=8.0.0
+pytest-httpx>=0.30.0
