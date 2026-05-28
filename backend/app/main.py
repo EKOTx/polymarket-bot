@@ -33,6 +33,8 @@ def _migrate_sqlite() -> None:
     migrations = [
         "ALTER TABLE users ADD COLUMN reset_token_hash VARCHAR(255)",
         "ALTER TABLE users ADD COLUMN reset_token_expires DATETIME",
+        "ALTER TABLE users ADD COLUMN verification_token_hash VARCHAR(255)",
+        "ALTER TABLE users ADD COLUMN verification_token_expires DATETIME",
     ]
     with engine.connect() as conn:
         for stmt in migrations:

@@ -69,3 +69,12 @@ class ResetPasswordRequest(BaseModel):
         if len(v) < 8:
             raise ValueError("Password must be at least 8 characters")
         return v
+
+
+class VerifyEmailRequest(BaseModel):
+    token: str
+
+
+class ResendVerificationResponse(BaseModel):
+    message: str
+    dev_token: str | None = None

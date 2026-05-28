@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException, Request, status
 
 from backend.app.api.deps import CurrentUser, DbSession
-from backend.app.core.email import send_password_reset
+from backend.app.core.email import send_password_reset, send_verification_email
 from backend.app.core.limiter import limiter
 from backend.app.core.security import create_access_token, hash_password, verify_password
 from backend.app.models.user import User
@@ -21,9 +21,11 @@ from backend.app.schemas.auth import (
     ForgotPasswordResponse,
     LoginRequest,
     RegisterRequest,
+    ResendVerificationResponse,
     ResetPasswordRequest,
     TokenResponse,
     UserResponse,
+    VerifyEmailRequest,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -36,15 +38,22 @@ def register(request: Request, body: RegisterRequest, db: DbSession):
     if existing:
         raise HTTPException(status.HTTP_409_CONFLICT, "Email already registered")
 
+    ver_token = secrets.token_urlsafe(32)
+    ver_token_hash = hashlib.sha256(ver_token.encode()).hexdigest()
+
     user = User(
         email=body.email,
         hashed_password=hash_password(body.password),
         full_name=body.full_name,
         plan="free",
+        verification_token_hash=ver_token_hash,
+        verification_token_expires=datetime.now(timezone.utc) + timedelta(hours=24),
     )
     db.add(user)
     db.commit()
     db.refresh(user)
+
+    send_verification_email(user.email, ver_token)
 
     token = create_access_token(user.id)
     return TokenResponse(access_token=token, plan=user.plan)
@@ -157,3 +166,49 @@ def reset_password(body: ResetPasswordRequest, db: DbSession):
     db.commit()
 
     return {"message": "Password updated successfully"}
+
+
+@router.post("/verify-email")
+def verify_email(body: VerifyEmailRequest, db: DbSession):
+    token_hash = hashlib.sha256(body.token.encode()).hexdigest()
+    user = db.query(User).filter(User.verification_token_hash == token_hash).first()
+
+    if not user:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid or expired verification token")
+
+    now = datetime.now(timezone.utc)
+    expires = user.verification_token_expires
+    if expires is not None:
+        exp_aware = expires if expires.tzinfo else expires.replace(tzinfo=timezone.utc)
+        if exp_aware < now:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Verification token has expired")
+
+    user.is_verified = True
+    user.verification_token_hash = None
+    user.verification_token_expires = None
+    db.commit()
+
+    return {"message": "Email verified successfully"}
+
+
+@router.post("/resend-verification", response_model=ResendVerificationResponse)
+@limiter.limit("3/hour")
+def resend_verification(request: Request, user: CurrentUser, db: DbSession):
+    if user.is_verified:
+        return ResendVerificationResponse(message="Email is already verified")
+
+    ver_token = secrets.token_urlsafe(32)
+    ver_token_hash = hashlib.sha256(ver_token.encode()).hexdigest()
+    user.verification_token_hash = ver_token_hash
+    user.verification_token_expires = datetime.now(timezone.utc) + timedelta(hours=24)
+    db.commit()
+
+    sent = send_verification_email(user.email, ver_token)
+
+    from backend.app.core.config import settings
+    dev_token = ver_token if (not sent or settings.is_dev) and not settings.SMTP_HOST else None
+
+    return ResendVerificationResponse(
+        message="Verification email sent",
+        dev_token=dev_token,
+    )

@@ -58,6 +58,18 @@ def send_password_reset(to: str, token: str) -> bool:
     return send_email(to, "Reset your PolymarketIQ password", html, text)
 
 
+def send_verification_email(to: str, token: str) -> bool:
+    verify_url = f"{settings.FRONTEND_URL}/verify-email?token={token}"
+    html = f"""
+    <p>Verify your PolymarketIQ email address to activate your account.</p>
+    <p><a href="{verify_url}">Verify my email</a></p>
+    <p>This link expires in 24 hours. If you did not create an account, ignore this email.</p>
+    <p style="color:#888;font-size:12px">Verify URL: {verify_url}</p>
+    """
+    text = f"Verify your PolymarketIQ account: {verify_url}\n\nExpires in 24 hours."
+    return send_email(to, "Verify your PolymarketIQ email", html, text)
+
+
 def send_waitlist_confirmation(to: str) -> bool:
     html = """
     <p>You're on the PolymarketIQ waitlist!</p>

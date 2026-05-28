@@ -47,6 +47,7 @@ export interface UserResponse {
   email: string;
   full_name: string | null;
   plan: string;
+  is_verified: boolean;
   is_active: boolean;
 }
 
@@ -73,6 +74,12 @@ export const authApi = {
 
   deleteAccount: (confirm_email: string) =>
     api.delete<{ message: string }>("/auth/me", { data: { confirm_email } }).then((r) => r.data),
+
+  verifyEmail: (token: string) =>
+    api.post<{ message: string }>("/auth/verify-email", { token }).then((r) => r.data),
+
+  resendVerification: () =>
+    api.post<{ message: string; dev_token?: string }>("/auth/resend-verification").then((r) => r.data),
 };
 
 // ── Opportunities ─────────────────────────────────────────────────────────────
