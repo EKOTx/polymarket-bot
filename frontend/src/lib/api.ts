@@ -61,6 +61,12 @@ export const authApi = {
 
   updateMe: (full_name: string) =>
     api.patch<UserResponse>("/auth/me", { full_name }).then((r) => r.data),
+
+  forgotPassword: (email: string) =>
+    api.post<{ message: string; dev_token?: string }>("/auth/forgot-password", { email }).then((r) => r.data),
+
+  resetPassword: (token: string, new_password: string) =>
+    api.post<{ message: string }>("/auth/reset-password", { token, new_password }).then((r) => r.data),
 };
 
 // ── Opportunities ─────────────────────────────────────────────────────────────

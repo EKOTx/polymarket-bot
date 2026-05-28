@@ -85,12 +85,17 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="mt-4 text-xs text-center text-[#6e7681]">
-            No account?{" "}
-            <Link href="/register" className="text-[#388bfd] hover:underline">
-              Register
+          <div className="mt-4 flex items-center justify-between text-xs text-[#6e7681]">
+            <span>
+              No account?{" "}
+              <Link href="/register" className="text-[#388bfd] hover:underline">
+                Register
+              </Link>
+            </span>
+            <Link href="/forgot-password" className="text-[#388bfd] hover:underline">
+              Forgot password?
             </Link>
-          </p>
+          </div>
         </div>
       </div>
     </div>

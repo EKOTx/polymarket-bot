@@ -87,6 +87,10 @@ class Settings(BaseSettings):
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
     EMAIL_FROM: str = "noreply@polymarket-intel.com"
+    FRONTEND_URL: str = "http://localhost:3000"
+
+    # ── Waitlist ──────────────────────────────────────────────────────────────
+    WAITLIST_NOTIFY_EMAIL: str = ""  # email to notify on new waitlist signup
 
     # ── External APIs ─────────────────────────────────────────────────────────
     THE_ODDS_API_KEY: str = ""

@@ -1,19 +1,25 @@
 """
-Auth endpoints: register, login, /me, refresh.
+Auth endpoints: register, login, /me, refresh, forgot/reset password.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+import hashlib
+import secrets
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, status
 
 from backend.app.api.deps import CurrentUser, DbSession
+from backend.app.core.email import send_password_reset
 from backend.app.core.security import create_access_token, hash_password, verify_password
 from backend.app.models.user import User
 from backend.app.schemas.auth import (
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
     LoginRequest,
     RegisterRequest,
+    ResetPasswordRequest,
     TokenResponse,
     UserResponse,
 )
@@ -73,3 +79,50 @@ def update_me(body: dict, user: CurrentUser, db: DbSession):
         db.commit()
         db.refresh(user)
     return user
+
+
+@router.post("/forgot-password", response_model=ForgotPasswordResponse)
+def forgot_password(body: ForgotPasswordRequest, db: DbSession):
+    """Request a password reset link. Always returns 200 to prevent email enumeration."""
+    user = db.query(User).filter(User.email == body.email).first()
+    if not user or not user.is_active:
+        return ForgotPasswordResponse(message="If that email is registered, a reset link has been sent.")
+
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    user.reset_token_hash = token_hash
+    user.reset_token_expires = datetime.now(timezone.utc) + timedelta(hours=1)
+    db.commit()
+
+    sent = send_password_reset(user.email, token)
+
+    from backend.app.core.config import settings
+    dev_token = token if (not sent or settings.is_dev) and not settings.SMTP_HOST else None
+
+    return ForgotPasswordResponse(
+        message="If that email is registered, a reset link has been sent.",
+        dev_token=dev_token,
+    )
+
+
+@router.post("/reset-password")
+def reset_password(body: ResetPasswordRequest, db: DbSession):
+    """Validate reset token and set new password."""
+    token_hash = hashlib.sha256(body.token.encode()).hexdigest()
+    user = db.query(User).filter(User.reset_token_hash == token_hash).first()
+
+    if not user:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid or expired reset token")
+
+    now = datetime.now(timezone.utc)
+    expires = user.reset_token_expires
+    if expires is None or (expires.tzinfo is None and expires.replace(tzinfo=timezone.utc) < now) or \
+       (expires.tzinfo is not None and expires < now):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Reset token has expired")
+
+    user.hashed_password = hash_password(body.new_password)
+    user.reset_token_hash = None
+    user.reset_token_expires = None
+    db.commit()
+
+    return {"message": "Password updated successfully"}

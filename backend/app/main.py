@@ -14,9 +14,30 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from sqlalchemy import text
+
 from backend.app.api.v1.router import api_router
 from backend.app.core.config import settings
 from backend.app.core.database import Base, engine
+from backend.app.models import user as _user_models  # noqa: F401
+from backend.app.models import public as _public_models  # noqa: F401
+
+
+def _migrate_sqlite() -> None:
+    """Add columns to existing SQLite tables that predate them."""
+    if settings.is_postgres:
+        return
+    migrations = [
+        "ALTER TABLE users ADD COLUMN reset_token_hash VARCHAR(255)",
+        "ALTER TABLE users ADD COLUMN reset_token_expires DATETIME",
+    ]
+    with engine.connect() as conn:
+        for stmt in migrations:
+            try:
+                conn.execute(text(stmt))
+                conn.commit()
+            except Exception:
+                pass  # column already exists
 
 
 # ---------------------------------------------------------------------------
@@ -25,8 +46,8 @@ from backend.app.core.database import Base, engine
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create tables for SQLite dev; Alembic handles Postgres migrations
     Base.metadata.create_all(bind=engine)
+    _migrate_sqlite()
     yield
     # Cleanup (nothing needed yet)
 
