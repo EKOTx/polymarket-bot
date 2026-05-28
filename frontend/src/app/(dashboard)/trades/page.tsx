@@ -11,6 +11,7 @@ import {
 } from "recharts";
 import { TopBar } from "@/components/layout/TopBar";
 import { Card, CardHeader, Stat } from "@/components/ui/Card";
+import { CloseModal } from "@/components/trades/CloseModal";
 import { tradesApi, PaperTrade, Portfolio, PortfolioHistory } from "@/lib/api";
 import { useScannerStore } from "@/lib/scannerStore";
 import { formatUsd, formatTs, cn } from "@/lib/utils";
@@ -21,12 +22,14 @@ export default function TradesPage() {
   const [history, setHistory] = useState<PortfolioHistory[]>([]);
   const [trades, setTrades] = useState<PaperTrade[]>([]);
   const [filter, setFilter] = useState<"ALL" | "OPEN" | "CLOSED">("ALL");
+  const [closeTarget, setCloseTarget] = useState<PaperTrade | null>(null);
+  const [localKey, setLocalKey] = useState(0);
 
   useEffect(() => {
     tradesApi.portfolio().then(setPortfolio).catch(console.error);
     tradesApi.portfolioHistory(200).then(setHistory).catch(console.error);
     tradesApi.list({ limit: 200 }).then(setTrades).catch(console.error);
-  }, [refreshKey]);
+  }, [refreshKey, localKey]);
 
   const filtered = filter === "ALL" ? trades : trades.filter((t) => t.status === filter);
   const open = trades.filter((t) => t.status === "OPEN");
@@ -39,6 +42,13 @@ export default function TradesPage() {
 
   return (
     <div>
+      {closeTarget && (
+        <CloseModal
+          trade={closeTarget}
+          onClose={() => setCloseTarget(null)}
+          onSuccess={() => { setCloseTarget(null); setLocalKey((k) => k + 1); }}
+        />
+      )}
       <TopBar title="Paper Trades" />
       <div className="p-6 space-y-6">
         {/* KPIs */}
@@ -157,6 +167,7 @@ export default function TradesPage() {
                   <th>Cost</th>
                   <th>PnL</th>
                   <th>Opened</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -205,6 +216,16 @@ export default function TradesPage() {
                         </span>
                       </td>
                       <td className="text-xs text-[#6e7681]">{formatTs(t.opened_at)}</td>
+                      <td>
+                        {t.status === "OPEN" && (
+                          <button
+                            onClick={() => setCloseTarget(t)}
+                            className="px-2 py-1 text-xs rounded border border-red-800/60 text-red-400 hover:bg-red-900/30 transition-colors font-mono"
+                          >
+                            Close
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}

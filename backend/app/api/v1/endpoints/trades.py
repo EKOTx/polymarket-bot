@@ -12,7 +12,7 @@ from sqlalchemy import desc, func
 
 from backend.app.api.deps import CurrentUser, DbSession
 from backend.app.core.config import settings
-from backend.app.models.market import Opportunity, PaperTrade, Portfolio
+from backend.app.models.market import Opportunity, PaperTrade, Portfolio, PriceSnapshot
 from backend.app.schemas.opportunity import ScannerStatusResponse
 
 router = APIRouter(prefix="/trades", tags=["trades"])
@@ -165,6 +165,63 @@ def place_trade(body: PlaceTradeIn, user: CurrentUser, db: DbSession):
         "unrealized_pnl": trade.unrealized_pnl,
         "status": trade.status,
         "opened_at": trade.opened_at,
+        "new_balance": round(new_balance, 2),
+    }
+
+
+class CloseTradeIn(BaseModel):
+    exit_price: Optional[float] = None  # None → use latest snapshot mid
+
+
+@router.post("/{trade_id}/close")
+def close_trade(trade_id: int, body: CloseTradeIn, user: CurrentUser, db: DbSession):
+    """Close an open paper trade. Uses latest market mid price if exit_price omitted."""
+    trade = db.query(PaperTrade).filter(
+        PaperTrade.id == trade_id,
+        PaperTrade.user_id == user.id,
+    ).first()
+    if not trade:
+        raise HTTPException(status_code=404, detail="Trade not found")
+    if trade.status != "OPEN":
+        raise HTTPException(status_code=400, detail="Trade is not open")
+
+    # Determine exit price
+    exit_price = body.exit_price
+    if exit_price is None and trade.market_id:
+        snap = (
+            db.query(PriceSnapshot)
+            .filter(PriceSnapshot.market_id == trade.market_id)
+            .order_by(desc(PriceSnapshot.timestamp))
+            .first()
+        )
+        if snap and snap.mid is not None:
+            exit_price = snap.mid
+    if exit_price is None:
+        exit_price = trade.entry_price  # fallback: break-even
+
+    # Sell slippage (exit at bid, so slightly below mid)
+    exit_price = max(exit_price * (1 - SLIPPAGE), 0.001)
+
+    proceeds = trade.size_shares * exit_price
+    realized_pnl = proceeds - trade.cost_usd
+
+    trade.exit_price = round(exit_price, 6)
+    trade.realized_pnl = round(realized_pnl, 4)
+    trade.unrealized_pnl = 0.0
+    trade.status = "CLOSED"
+    trade.closed_at = datetime.utcnow()
+
+    balance, starting = _portfolio_snap(db, user.id)
+    new_balance = balance + proceeds
+    _save_portfolio(db, user.id, new_balance, starting)
+    db.commit()
+
+    return {
+        "id": trade.id,
+        "exit_price": trade.exit_price,
+        "realized_pnl": trade.realized_pnl,
+        "status": trade.status,
+        "closed_at": trade.closed_at,
         "new_balance": round(new_balance, 2),
     }
 

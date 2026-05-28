@@ -177,6 +177,9 @@ export const tradesApi = {
 
   place: (payload: PlaceTradePayload) =>
     api.post("/trades", payload).then((r) => r.data),
+
+  close: (tradeId: number, exitPrice?: number) =>
+    api.post(`/trades/${tradeId}/close`, { exit_price: exitPrice ?? null }).then((r) => r.data),
 };
 
 // ── Alerts ────────────────────────────────────────────────────────────────────
