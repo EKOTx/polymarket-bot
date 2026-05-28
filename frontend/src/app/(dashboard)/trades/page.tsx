@@ -12,9 +12,11 @@ import {
 import { TopBar } from "@/components/layout/TopBar";
 import { Card, CardHeader, Stat } from "@/components/ui/Card";
 import { tradesApi, PaperTrade, Portfolio, PortfolioHistory } from "@/lib/api";
+import { useScannerStore } from "@/lib/scannerStore";
 import { formatUsd, formatTs, cn } from "@/lib/utils";
 
 export default function TradesPage() {
+  const { refreshKey } = useScannerStore();
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [history, setHistory] = useState<PortfolioHistory[]>([]);
   const [trades, setTrades] = useState<PaperTrade[]>([]);
@@ -24,7 +26,7 @@ export default function TradesPage() {
     tradesApi.portfolio().then(setPortfolio).catch(console.error);
     tradesApi.portfolioHistory(200).then(setHistory).catch(console.error);
     tradesApi.list({ limit: 200 }).then(setTrades).catch(console.error);
-  }, []);
+  }, [refreshKey]);
 
   const filtered = filter === "ALL" ? trades : trades.filter((t) => t.status === filter);
   const open = trades.filter((t) => t.status === "OPEN");

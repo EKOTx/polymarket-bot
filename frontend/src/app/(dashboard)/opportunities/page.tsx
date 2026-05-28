@@ -5,11 +5,13 @@ import { TopBar } from "@/components/layout/TopBar";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { opportunitiesApi, Opportunity } from "@/lib/api";
+import { useScannerStore } from "@/lib/scannerStore";
 import { formatEdge, formatUsd, formatTs, cn } from "@/lib/utils";
 
 const TYPE_OPTIONS = ["", "VALUE", "SPREAD", "HIGH_VIG", "TOURNAMENT_ARB"];
 
 export default function OpportunitiesPage() {
+  const { refreshKey } = useScannerStore();
   const [items, setItems] = useState<Opportunity[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -33,7 +35,7 @@ export default function OpportunitiesPage() {
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [oppType, minEdge, page]);
+  }, [oppType, minEdge, page, refreshKey]);
 
   return (
     <div>

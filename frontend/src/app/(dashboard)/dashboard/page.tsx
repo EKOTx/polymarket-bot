@@ -19,9 +19,11 @@ import {
   Portfolio,
   PortfolioHistory,
 } from "@/lib/api";
+import { useScannerStore } from "@/lib/scannerStore";
 import { formatUsd, formatEdge, formatTs } from "@/lib/utils";
 
 export default function DashboardPage() {
+  const { refreshKey } = useScannerStore();
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [history, setHistory] = useState<PortfolioHistory[]>([]);
   const [latest, setLatest] = useState<Opportunity[]>([]);
@@ -30,7 +32,7 @@ export default function DashboardPage() {
     tradesApi.portfolio().then(setPortfolio).catch(console.error);
     tradesApi.portfolioHistory(100).then(setHistory).catch(console.error);
     opportunitiesApi.latest(5).then(setLatest).catch(console.error);
-  }, []);
+  }, [refreshKey]);
 
   const totalPnl = portfolio
     ? portfolio.realized_pnl + portfolio.unrealized_pnl
