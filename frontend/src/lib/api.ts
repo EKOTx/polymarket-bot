@@ -167,3 +167,23 @@ export const tradesApi = {
   portfolioHistory: (limit?: number) =>
     api.get<PortfolioHistory[]>("/trades/portfolio/history", { params: { limit } }).then((r) => r.data),
 };
+
+// ── Alerts ────────────────────────────────────────────────────────────────────
+
+export interface AlertConfig {
+  discord_configured: boolean;
+  slack_configured: boolean;
+  min_edge_pct: number;
+  cooldown_minutes: number;
+  digest_hour: number;
+}
+
+export interface AlertTestResult {
+  discord: boolean | null;
+  slack: boolean | null;
+}
+
+export const alertsApi = {
+  config: () => api.get<AlertConfig>("/alerts/config").then((r) => r.data),
+  test: () => api.post<AlertTestResult>("/alerts/test").then((r) => r.data),
+};
