@@ -107,7 +107,22 @@ app.include_router(api_router)
 
 @app.get("/health", tags=["meta"])
 def health():
-    return {"status": "ok", "version": "1.0.0"}
+    return {"status": "ok", "version": settings.APP_VERSION}
+
+
+@app.get("/ready", tags=["meta"])
+def ready():
+    """Readiness check — verifies DB is reachable. Used by deployment health probes."""
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return {"status": "ready", "db": "ok"}
+    except Exception as exc:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not_ready", "db": "error", "detail": str(exc)},
+        )
 
 
 @app.get("/", tags=["meta"], include_in_schema=False)

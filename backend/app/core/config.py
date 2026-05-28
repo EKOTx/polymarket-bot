@@ -95,6 +95,18 @@ class Settings(BaseSettings):
     # ── External APIs ─────────────────────────────────────────────────────────
     THE_ODDS_API_KEY: str = ""
 
+    @field_validator("SECRET_KEY", mode="after")
+    @classmethod
+    def secret_key_must_be_changed(cls, v: str) -> str:
+        if v == "change-me-in-production-use-openssl-rand-hex-32":
+            import os
+            if os.getenv("ENV", "development") == "production":
+                raise ValueError(
+                    "SECRET_KEY must be changed for production. "
+                    "Generate with: openssl rand -hex 32"
+                )
+        return v
+
     @field_validator("ENABLE_REAL_TRADING", mode="before")
     @classmethod
     def block_real_trading(cls, v):
