@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { TopBar } from "@/components/layout/TopBar";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -99,7 +100,17 @@ export default function OpportunitiesPage() {
                     >
                       <td><Badge type={o.opportunity_type}>{o.opportunity_type}</Badge></td>
                       <td className="max-w-xs">
-                        <p className="truncate text-xs">{o.title}</p>
+                        {o.market_id ? (
+                          <Link
+                            href={`/markets/${encodeURIComponent(o.market_id)}`}
+                            className="block truncate text-xs text-[#388bfd] hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {o.title}
+                          </Link>
+                        ) : (
+                          <p className="truncate text-xs">{o.title}</p>
+                        )}
                         <p className="text-xs text-[#6e7681] truncate">{o.event_title}</p>
                       </td>
                       <td>

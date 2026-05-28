@@ -187,3 +187,37 @@ export const alertsApi = {
   config: () => api.get<AlertConfig>("/alerts/config").then((r) => r.data),
   test: () => api.post<AlertTestResult>("/alerts/test").then((r) => r.data),
 };
+
+// ── Markets ───────────────────────────────────────────────────────────────────
+
+export interface PricePoint {
+  timestamp: string;
+  outcome: string;
+  bid: number | null;
+  ask: number | null;
+  mid: number | null;
+  spread: number | null;
+  bid_depth_usd: number | null;
+  ask_depth_usd: number | null;
+}
+
+export interface MarketDetail {
+  id: string;
+  question: string;
+  event_title: string;
+  volume: number;
+  liquidity: number;
+  active: boolean;
+  outcomes: string[];
+  outcome_prices: number[];
+  first_seen: string;
+  last_updated: string;
+  price_history: PricePoint[];
+  recent_opportunities: Opportunity[];
+  open_trades: PaperTrade[];
+}
+
+export const marketsApi = {
+  detail: (marketId: string) =>
+    api.get<MarketDetail>(`/markets/${encodeURIComponent(marketId)}`).then((r) => r.data),
+};
