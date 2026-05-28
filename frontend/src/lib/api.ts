@@ -77,6 +77,8 @@ export interface Opportunity {
   suggested_size_usd: number;
   yes_bid: number | null;
   yes_ask: number | null;
+  no_bid: number | null;
+  no_ask: number | null;
   vig_pct: number | null;
   liquidity: number;
   market_count: number;
@@ -158,6 +160,12 @@ export interface PortfolioHistory {
   unrealized_pnl: number;
 }
 
+export interface PlaceTradePayload {
+  opportunity_id: number;
+  outcome: "YES" | "NO";
+  size_usd: number;
+}
+
 export const tradesApi = {
   list: (params?: { status?: string; limit?: number }) =>
     api.get<PaperTrade[]>("/trades", { params }).then((r) => r.data),
@@ -166,6 +174,9 @@ export const tradesApi = {
 
   portfolioHistory: (limit?: number) =>
     api.get<PortfolioHistory[]>("/trades/portfolio/history", { params: { limit } }).then((r) => r.data),
+
+  place: (payload: PlaceTradePayload) =>
+    api.post("/trades", payload).then((r) => r.data),
 };
 
 // ── Alerts ────────────────────────────────────────────────────────────────────

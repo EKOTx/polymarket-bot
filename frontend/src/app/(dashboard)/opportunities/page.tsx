@@ -5,6 +5,7 @@ import Link from "next/link";
 import { TopBar } from "@/components/layout/TopBar";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
+import { TradeModal } from "@/components/trades/TradeModal";
 import { opportunitiesApi, Opportunity } from "@/lib/api";
 import { useScannerStore } from "@/lib/scannerStore";
 import { formatEdge, formatUsd, formatTs, cn } from "@/lib/utils";
@@ -20,6 +21,7 @@ export default function OpportunitiesPage() {
   const [minEdge, setMinEdge] = useState(0);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [tradeTarget, setTradeTarget] = useState<Opportunity | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -40,6 +42,13 @@ export default function OpportunitiesPage() {
 
   return (
     <div>
+      {tradeTarget && (
+        <TradeModal
+          opportunity={tradeTarget}
+          onClose={() => setTradeTarget(null)}
+          onSuccess={() => setTradeTarget(null)}
+        />
+      )}
       <TopBar title="Opportunities" />
       <div className="p-6 space-y-4">
         {/* Filters */}
@@ -157,6 +166,14 @@ export default function OpportunitiesPage() {
                                 ))}
                               </div>
                             )}
+                            <div className="col-span-2 flex items-center gap-2 pt-1">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setTradeTarget(o); }}
+                                className="px-3 py-1.5 text-xs rounded bg-emerald-700 hover:bg-emerald-600 text-white font-mono transition-colors"
+                              >
+                                Paper trade
+                              </button>
+                            </div>
                             {Object.keys(o.details).length > 0 && (
                               <div className="col-span-2">
                                 <p className="text-[#6e7681] mb-1">Details</p>

@@ -27,6 +27,8 @@ class OpportunityOut(BaseModel):
     suggested_size_usd: float
     yes_bid: Optional[float]
     yes_ask: Optional[float]
+    no_bid: Optional[float] = None
+    no_ask: Optional[float] = None
     vig_pct: Optional[float]
     liquidity: float
     market_count: int
