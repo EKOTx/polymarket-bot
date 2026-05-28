@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { TopBar } from "@/components/layout/TopBar";
 import { Card } from "@/components/ui/Card";
@@ -101,9 +101,8 @@ export default function OpportunitiesPage() {
               </thead>
               <tbody>
                 {items.map((o) => (
-                  <>
+                  <React.Fragment key={o.id}>
                     <tr
-                      key={o.id}
                       className="cursor-pointer"
                       onClick={() => setExpanded(expanded === o.id ? null : o.id)}
                     >
@@ -186,7 +185,7 @@ export default function OpportunitiesPage() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>

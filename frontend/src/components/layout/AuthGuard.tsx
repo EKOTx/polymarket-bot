@@ -1,21 +1,28 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
+  const [mounted, setMounted] = useState(false);
   const { token, user, isLoading, loadUser } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
     if (!token) {
       router.push("/login");
     } else if (!user) {
       loadUser();
     }
-  }, [token, user, loadUser, router]);
+  }, [mounted, token, user, loadUser, router]);
 
+  if (!mounted) return null;
   if (!token) return null;
   if (!user && isLoading) {
     return (
